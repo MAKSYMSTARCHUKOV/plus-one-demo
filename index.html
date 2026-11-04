@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>plus_one · симулятор депозитного кубика</title>
+<style>
+  :root {
+    --bg: #111318;
+    --panel: #1a1d24;
+    --panel-2: #22262f;
+    --line: #2f3440;
+    --text: #e6e8ee;
+    --muted: #8b93a7;
+    --accent: #e0443c;
+    --accent-2: #3b82f6;
+    --ok: #22c55e;
+    --warn: #f59e0b;
+    --frozen: #38bdf8;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    height: 100vh;
+  }
+  .top {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    border-bottom: 2px solid var(--line);
+    min-height: 0;
+  }
+  .panel { padding: 14px 16px; }
+  .cashbox { border-right: 2px solid var(--line); }
+  .right { display: grid; grid-template-rows: auto 1fr; min-height: 0; }
+  .cube-area { border-bottom: 2px solid var(--line); }
+  h2 { margin: 0 0 12px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+  label { display: block; color: var(--muted); margin-bottom: 4px; }
+  input[type=number], select {
+    width: 100%; padding: 10px; background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 6px; font: inherit; margin-bottom: 10px;
+  }
+  .presets { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  button {
+    padding: 10px 14px; border-radius: 6px; border: 1px solid var(--line);
+    background: var(--panel-2); color: var(--text); font: inherit; cursor: pointer;
+  }
+  button:hover { border-color: var(--muted); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); font-weight: 700; }
+  button.blue { background: var(--accent-2); border-color: var(--accent-2); font-weight: 700; }
+  button.ok { background: var(--ok); border-color: var(--ok); color: #06240f; font-weight: 700; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .cube-row { display: grid; grid-template-columns: 120px 1fr; gap: 16px; align-items: center; }
+  .cube {
+    width: 110px; height: 110px; border-radius: 18px; background: var(--panel-2);
+    border: 2px solid var(--line); display: grid; place-items: center; position: relative;
+    font-size: 56px; line-height: 1;
+  }
+  .cube.frozen { border-color: var(--frozen); box-shadow: 0 0 0 3px rgba(56,189,248,.25); }
+  .cube .spins {
+    position: absolute; top: -10px; right: -10px; min-width: 28px; height: 28px; padding: 0 8px;
+    border-radius: 14px; background: var(--accent); color: #fff; font-size: 14px;
+    display: grid; place-items: center;
+  }
+  .bar { height: 14px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 7px; overflow: hidden; margin: 8px 0; }
+  .bar > div { height: 100%; background: var(--accent-2); width: 0; transition: width .2s; }
+  .bar.frozen > div { background: var(--frozen); }
+  .kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; }
+  .kv b { color: var(--muted); font-weight: 400; }
+  .tag { display: inline-block; padding: 1px 7px; border-radius: 4px; font-size: 12px; }
+  .tag.new { background: #334155; }
+  .tag.player { background: #7c3aed; }
+  .tag.pro { background: #b45309; }
+  .tag.frozen { background: var(--frozen); color: #062133; }
+  .tag.active { background: var(--ok); color: #06240f; }
+  .prize { margin-top: 8px; padding: 3px 8px; border: 1px dashed var(--warn); border-radius: 4px; color: var(--warn); font-size: 12px; display: inline-block; }
+  .prize[hidden] { display: none; }
+  .log { padding: 0; overflow: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line); vertical-align: top; white-space: nowrap; }
+  tr.series-start td { border-top: 4px solid var(--muted); }
+  th { position: sticky; top: 0; background: var(--panel); color: var(--muted); font-weight: 400; z-index: 1; }
+  td.msg { white-space: normal; min-width: 320px; }
+  tbody tr:first-child td { border-top: 0; }
+  tr.pay td:first-child { border-left: 3px solid var(--accent-2); }
+  tr.spin td:first-child { border-left: 3px solid var(--accent); }
+  tr.bonus td:first-child { border-left: 3px solid var(--ok); }
+  tr.ignored td:first-child { border-left: 3px solid var(--frozen); }
+  tr.level td:first-child, tr.config td:first-child { border-left: 3px solid var(--warn); }
+  tr.reset td:first-child { border-left: 3px solid var(--muted); }
+  .small { color: var(--muted); font-size: 12px; }
+  .toolbar { display: flex; justify-content: space-between; align-items: center; padding: 4px 10px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; }
+</style>
+</head>
+<body>
+  <div class="top">
+    <section class="panel cashbox">
+      <h2>Каса</h2>
+      <label for="amount">Сума депозиту, ₴</label>
+      <input id="amount" type="number" min="1" step="1" value="1000">
+      <div class="presets" id="presets"></div>
+      <div class="row">
+        <button class="primary" id="pay">PAY</button>
+        <span class="small" id="pay-hint"></span>
+      </div>
+      <h2 style="margin-top:20px">Рівень лояльності</h2>
+      <div class="kv">
+        <b>Сума депозитів</b><span id="total-dep"></span>
+        <b>Авто-рівень</b><span id="auto-level"></span>
+        <b>Пороги</b><span id="thresholds" class="small"></span>
+      </div>
+      <label for="level-override" style="margin-top:10px">Ручний рівень (для тестів)</label>
+      <select id="level-override">
+        <option value="">авто за сумою депозитів</option>
+        <option value="new">new</option>
+        <option value="player">player</option>
+        <option value="pro">pro</option>
+      </select>
+      <h2 style="margin-top:20px">Конфіги</h2>
+      <div id="configs" class="small"></div>
+    </section>
+
+    <section class="right">
+      <div class="panel cube-area">
+        <h2>Кубик (mode bonus)</h2>
+        <div class="cube-row">
+          <div class="cube" id="cube">
+            <span id="face">😎</span>
+            <span class="spins" id="spins-badge">0</span>
+          </div>
+          <div>
+            <div class="bar" id="bar"><div id="bar-fill"></div></div>
+            <div class="row">
+              <span id="bar-label"></span>
+              <span id="frozen-tag"></span>
+            </div>
+            <div class="row" style="margin-top:10px">
+              <button class="ok" id="get-bonus">GET BONUS</button>
+            </div>
+            <div class="prize" id="prize" hidden></div>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Стан</h2>
+        <div class="kv" id="state"></div>
+      </div>
+    </section>
+  </div>
+
+  <section class="log">
+    <div class="toolbar">
+      <h2 style="margin:0">Лог</h2>
+      <div class="row">
+        <span class="small" id="log-count"></span>
+        <button class="primary" id="reset">RESET</button>
+      </div>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>#</th><th>Дія</th><th class="msg">Що сталося</th>
+          <th>Рівень</th><th>Конфіг</th><th>Прогрес</th><th>Спіни</th><th>Frozen</th><th>Бонусів</th>
+        </tr>
+      </thead>
+      <tbody id="log"></tbody>
+    </table>
+  </section>
+
+<script>
+const LIMIT = 5
+
+const CONFIGS = {
+  new:    { level: 'new',    goal: 2000 },
+  player: { level: 'player', goal: 4000 },
+  pro:    { level: 'pro',    goal: 10000 },
+}
+
+const LEVEL_THRESHOLDS = [
+  { level: 'new', from: 0 },
+  { level: 'player', from: 10000 },
+  { level: 'pro', from: 30000 },
+]
+
+const PRESETS = [500, 1000, 2000, 5000, 10000, 25000, 100000]
+
+const initialState = () => ({
+  totalDeposited: 0,
+  levelOverride: '',
+  progress: 0,
+  spins: 0,
+  isFrozen: false,
+  config: null,
+  lastBonus: null,
+  bonuses: [],
+  userPayments: [],
+})
+
+let state = initialState()
+let log = []
+let series = 0
+
+function autoLevel() {
+  let level = 'new'
+  for (const t of LEVEL_THRESHOLDS) if (state.totalDeposited >= t.from) level = t.level
+  return level
+}
+
+function currentLevel() {
+  return state.levelOverride || autoLevel()
+}
+
+function resolveConfig() {
+  return CONFIGS[currentLevel()]
+}
+
+function snapshot() {
+  return {
+    level: currentLevel(),
+    config: state.config ? `${state.config.level} / ${state.config.goal}` : '—',
+    progress: state.progress,
+    spins: state.spins,
+    frozen: state.isFrozen,
+    bonus: state.bonuses.length,
+  }
+}
+
+function addLog(type, action, message) {
+  log.push({ type, action, message, series, ...snapshot() })
+}
+
+function pinConfigIfNeeded(reason) {
+  const resolved = resolveConfig()
+  if (!state.config) {
+    state.config = resolved
+    addLog('config', 'pin config', `Закріплено конфіг ${resolved.level} (goal ${resolved.goal}): ${reason}`)
+    return
+  }
+  if (state.spins === 0 && state.config.level !== resolved.level) {
+    const before = state.config.level
+    state.config = resolved
+    addLog('config', 're-pin config', `Спінів 0, рівень ${before} → ${resolved.level}: конфіг оновлено на ${resolved.level} (goal ${resolved.goal}): ${reason}`)
+  }
+}
+
+function normalize() {
+  const goal = state.config.goal
+  const earned = Math.floor(state.progress / goal)
+  if (earned > 0) {
+    state.spins += earned
+    state.progress = state.progress % goal
+    addLog('pay', 'convert', `Прогрес ≥ goal: +${earned} спін(ів), залишок ${state.progress}`)
+  }
+  if (state.spins >= LIMIT) {
+    const trimmed = state.spins - LIMIT
+    const lost = state.progress + trimmed * goal
+    state.spins = LIMIT
+    state.progress = 0
+    state.isFrozen = true
+    addLog('pay', 'freeze', `Досягнуто ліміт ${LIMIT}: спіни = ${LIMIT}, прогрес обрізано до 0 (згоріло ${lost}), is_frozen = true`)
+  }
+}
+
+function pay(amount) {
+  if (!(amount > 0)) return
+  series++
+  const levelBefore = currentLevel()
+  state.totalDeposited += amount
+  state.lastBonus = null
+  state.userPayments.push({ type: 'plus_one_xp', amount })
+  addLog('pay', 'PAY', `Депозит ${amount}. user_payments ← plus_one_xp ${amount} (пишеться завжди)`)
+
+  if (currentLevel() !== levelBefore) {
+    addLog('level', 'level up', `Рівень лояльності ${levelBefore} → ${currentLevel()} (сума депозитів ${state.totalDeposited})`)
+  }
+
+  if (state.isFrozen) {
+    addLog('ignored', 'ignored', `is_frozen = true: прогрес не нараховано. plus_one_log ← { type: progress, amount: ${amount}, is_frozen: true }`)
+    render()
+    return
+  }
+
+  pinConfigIfNeeded('перше нарахування або спінів 0')
+  state.progress += amount
+  addLog('pay', 'progress', `Прогрес +${amount} → ${state.progress} / ${state.config.goal}`)
+  normalize()
+  render()
+}
+
+function getBonus() {
+  if (state.spins === 0) return
+  series++
+  const resolved = resolveConfig()
+  if (!state.config || state.config.level !== resolved.level) {
+    const before = state.config ? state.config.level : '—'
+    state.config = resolved
+    addLog('config', 're-pin config', `Спін: конфіг ${before} → ${resolved.level} (goal ${resolved.goal}, рівень юзера ${currentLevel()})`)
+  }
+  state.spins -= 1
+  state.lastBonus = state.config.level
+  state.bonuses.push(state.config.level)
+  let unfreeze = ''
+  if (state.spins === 0 && state.isFrozen) {
+    state.isFrozen = false
+    unfreeze = ' Спіни = 0: is_frozen = false, прогрес знову росте.'
+  }
+  addLog('bonus', 'GET BONUS', `Бонус рівня ${state.config.level}. Спіни ${state.spins + 1} → ${state.spins}. plus_one_log ← { mode: bonus, level: ${currentLevel()}, is_frozen: ${state.isFrozen} }.${unfreeze}`)
+  pinConfigIfNeeded('після отримання бонусу')
+  render()
+}
+
+function reset() {
+  state = initialState()
+  log = []
+  series++
+  addLog('reset', 'RESET', 'Усе скинуто до початкового стану: new, прогрес 0, спінів 0, без бонусів')
+  render()
+}
+
+function fmt(n) { return n.toLocaleString('uk-UA') }
+
+function render() {
+  const cfg = state.config || resolveConfig()
+  const goal = cfg.goal
+  const hasSpins = state.spins > 0
+  const done = hasSpins ? goal : Math.min(state.progress, goal)
+  const pct = Math.floor(done * 100 / goal)
+
+  document.getElementById('total-dep').textContent = fmt(state.totalDeposited)
+  document.getElementById('auto-level').textContent = autoLevel()
+  document.getElementById('thresholds').textContent = LEVEL_THRESHOLDS.map(t => `${t.level} ≥ ${fmt(t.from)}`).join(' · ')
+  document.getElementById('level-override').value = state.levelOverride
+  document.getElementById('pay-hint').textContent = state.isFrozen ? 'is_frozen: депозит запишеться в user_payments, прогрес не зміниться' : ''
+
+  const cube = document.getElementById('cube')
+  cube.classList.toggle('frozen', state.isFrozen)
+  document.getElementById('face').textContent = state.lastBonus ? '🥳' : '😎'
+  document.getElementById('spins-badge').textContent = state.spins
+
+  const bar = document.getElementById('bar')
+  bar.classList.toggle('frozen', state.isFrozen)
+  document.getElementById('bar-fill').style.width = pct + '%'
+  document.getElementById('bar-label').textContent = `${fmt(done)} / ${fmt(goal)} (${pct}%) · залишок прогресу ${fmt(state.progress)}`
+  document.getElementById('frozen-tag').innerHTML = state.isFrozen
+    ? '<span class="tag frozen">is_frozen</span>'
+    : '<span class="tag active">прогрес активний</span>'
+
+  document.getElementById('get-bonus').disabled = !hasSpins
+  const prizeEl = document.getElementById('prize')
+  prizeEl.hidden = !state.lastBonus
+  if (state.lastBonus) prizeEl.textContent = `Бонус рівня ${state.lastBonus}`
+
+  const levelTag = l => `<span class="tag ${l}">${l}</span>`
+  document.getElementById('state').innerHTML = `
+    <b>Рівень юзера</b><span>${levelTag(currentLevel())}</span>
+    <b>Закріплений конфіг</b><span>${state.config ? `${levelTag(state.config.level)} goal ${fmt(state.config.goal)}` : '— (ще не закріплено)'}</span>
+    <b>Актуальний конфіг за рівнем</b><span>${levelTag(resolveConfig().level)} goal ${fmt(resolveConfig().goal)}</span>
+    <b>details.progress</b><span>${fmt(state.progress)}</span>
+    <b>details.spins</b><span>${state.spins} / ${LIMIT}</span>
+    <b>details.is_frozen</b><span>${state.isFrozen}</span>
+    <b>/info.bonus</b><span>{ goal: ${goal}, done: ${done}, progress: ${pct}, can_spin: ${hasSpins}, available_spins: ${state.spins}, is_frozen: ${state.isFrozen} }</span>
+    <b>Бонусів отримано</b><span>${state.bonuses.length}${state.bonuses.length ? ' (' + Object.entries(state.bonuses.reduce((m, l) => ({ ...m, [l]: (m[l] || 0) + 1 }), {})).map(([l, n]) => `${l} ×${n}`).join(', ') + ')' : ''}</span>
+    <b>user_payments (plus_one_xp)</b><span>${state.userPayments.length} записів, сума ${fmt(state.userPayments.reduce((s, p) => s + p.amount, 0))}</span>
+  `
+
+  document.getElementById('configs').innerHTML = Object.values(CONFIGS).map(c =>
+    `${levelTag(c.level)} goal ${fmt(c.goal)}`
+  ).join('<br>') + `<br>ліміт спінів: ${LIMIT}`
+
+  const tbody = document.getElementById('log')
+  const rows = log.map((e, i) => ({ ...e, index: i + 1 }))
+  const groups = []
+  for (const e of rows) {
+    const last = groups[groups.length - 1]
+    if (last && last[0].series === e.series) last.push(e)
+    else groups.push([e])
+  }
+  const ordered = groups.reverse().flat()
+  tbody.innerHTML = ordered.map((e, i) => `
+    <tr class="${e.type}${i > 0 && e.series !== ordered[i - 1].series ? ' series-start' : ''}">
+      <td>${e.index}</td>
+      <td>${e.action}</td>
+      <td class="msg">${e.message}</td>
+      <td>${levelTag(e.level)}</td>
+      <td>${e.config}</td>
+      <td>${fmt(e.progress)}</td>
+      <td>${e.spins}</td>
+      <td>${e.frozen ? '<span class="tag frozen">true</span>' : 'false'}</td>
+      <td>${e.bonus}</td>
+    </tr>
+  `).join('')
+  document.getElementById('log-count').textContent = `${log.length} записів · новіші зверху`
+}
+
+document.getElementById('presets').innerHTML = PRESETS.map(p => `<button data-amount="${p}">${fmt(p)}</button>`).join('')
+function clearBonus() {
+  if (!state.lastBonus) return
+  state.lastBonus = null
+  render()
+}
+document.getElementById('presets').addEventListener('click', e => {
+  const b = e.target.closest('button[data-amount]')
+  if (b) document.getElementById('amount').value = b.dataset.amount
+  clearBonus()
+})
+document.getElementById('amount').addEventListener('input', clearBonus)
+document.getElementById('pay').addEventListener('click', () => pay(parseInt(document.getElementById('amount').value, 10)))
+document.getElementById('get-bonus').addEventListener('click', getBonus)
+document.getElementById('reset').addEventListener('click', reset)
+document.getElementById('level-override').addEventListener('change', e => {
+  series++
+  state.lastBonus = null
+  const before = currentLevel()
+  state.levelOverride = e.target.value
+  if (currentLevel() !== before) addLog('level', 'level change', `Рівень змінено вручну ${before} → ${currentLevel()}`)
+  pinConfigIfNeeded('зміна рівня')
+  render()
+})
+
+addLog('reset', 'init', 'Початковий стан: new, прогрес 0, спінів 0')
+render()
+</script>
+</body>
+</html>
