@@ -52,7 +52,6 @@
   button:hover { border-color: var(--muted); }
   button:disabled { opacity: .4; cursor: not-allowed; }
   button.primary { background: var(--accent); border-color: var(--accent); font-weight: 700; }
-  button.blue { background: var(--accent-2); border-color: var(--accent-2); font-weight: 700; }
   button.ok { background: var(--ok); border-color: var(--ok); color: #06240f; font-weight: 700; }
   .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
   .cube-row { display: grid; grid-template-columns: 120px 1fr; gap: 16px; align-items: center; }
@@ -74,8 +73,11 @@
   .kv b { color: var(--muted); font-weight: 400; }
   .tag { display: inline-block; padding: 1px 7px; border-radius: 4px; font-size: 12px; }
   .tag.new { background: #334155; }
-  .tag.player { background: #7c3aed; }
+  .tag.player { background: #1d4ed8; }
+  .tag.gamer { background: #7c3aed; }
   .tag.pro { background: #b45309; }
+  .tag.selected { background: #be123c; }
+  .tag.cfg { background: #0f766e; }
   .tag.frozen { background: var(--frozen); color: #062133; }
   .tag.active { background: var(--ok); color: #06240f; }
   .prize { margin-top: 8px; padding: 3px 8px; border: 1px dashed var(--warn); border-radius: 4px; color: var(--warn); font-size: 12px; display: inline-block; }
@@ -88,7 +90,6 @@
   td.msg { white-space: normal; min-width: 320px; }
   tbody tr:first-child td { border-top: 0; }
   tr.pay td:first-child { border-left: 3px solid var(--accent-2); }
-  tr.spin td:first-child { border-left: 3px solid var(--accent); }
   tr.bonus td:first-child { border-left: 3px solid var(--ok); }
   tr.ignored td:first-child { border-left: 3px solid var(--frozen); }
   tr.level td:first-child, tr.config td:first-child { border-left: 3px solid var(--warn); }
@@ -115,13 +116,8 @@
         <b>Досвід у рівні</b><span id="level-xp"></span>
       </div>
       <label for="level-override" style="margin-top:10px">Ручний рівень (для тестів)</label>
-      <select id="level-override">
-        <option value="">авто за сумою депозитів</option>
-        <option value="new">new</option>
-        <option value="player">player</option>
-        <option value="pro">pro</option>
-      </select>
-      <h2 style="margin-top:20px">Конфіги</h2>
+      <select id="level-override"></select>
+      <h2 style="margin-top:20px">Конфіги plus_one (bonus)</h2>
       <div id="configs" class="small"></div>
     </section>
 
@@ -175,23 +171,35 @@
 <script>
 const LIMIT = 5
 
+const LEVELS = [
+  { level: 'new', level_up: 3000 },
+  { level: 'player', level_up: 30000 },
+  { level: 'gamer', level_up: 70000 },
+  { level: 'pro', level_up: 200000 },
+  { level: 'selected', level_up: null },
+]
+
 const CONFIGS = {
-  new:    { level: 'new',    goal: 2000 },
-  player: { level: 'player', goal: 4000 },
-  pro:    { level: 'pro',    goal: 10000 },
+  'config-1': { name: 'config-1', goal: 2000 },
+  'config-2': { name: 'config-2', goal: 5000 },
+  'config-3': { name: 'config-3', goal: 10000 },
+  'config-4': { name: 'config-4', goal: 50000 },
 }
 
-const LEVEL_ORDER = ['new', 'player', 'pro']
-const LEVEL_THRESHOLDS = LEVEL_ORDER.map((level, i) => ({
-  level,
-  from: LEVEL_ORDER.slice(0, i).reduce((sum, l) => sum + CONFIGS[l].goal, 0),
-}))
+const DEFAULT_ACCESS = {
+  new: 'config-1',
+  player: 'config-2',
+  gamer: 'config-3',
+  pro: 'config-3',
+  selected: 'config-4',
+}
 
 const PRESETS = [500, 1000, 2000, 5000, 10000, 25000, 100000]
 
 const initialState = () => ({
   totalDeposited: 0,
   levelOverride: '',
+  access: { ...DEFAULT_ACCESS },
   progress: 0,
   spins: 0,
   isFrozen: false,
@@ -205,10 +213,18 @@ let state = initialState()
 let log = []
 let series = 0
 
+function loyalty() {
+  let experience = state.totalDeposited
+  let index = 0
+  while (LEVELS[index].level_up !== null && experience >= LEVELS[index].level_up) {
+    experience -= LEVELS[index].level_up
+    index++
+  }
+  return { level: LEVELS[index].level, experience, level_up: LEVELS[index].level_up, index }
+}
+
 function autoLevel() {
-  let level = 'new'
-  for (const t of LEVEL_THRESHOLDS) if (state.totalDeposited >= t.from) level = t.level
-  return level
+  return loyalty().level
 }
 
 function currentLevel() {
@@ -216,13 +232,17 @@ function currentLevel() {
 }
 
 function resolveConfig() {
-  return CONFIGS[currentLevel()]
+  return CONFIGS[state.access[currentLevel()]]
+}
+
+function cfgLabel(c) {
+  return c ? `${c.name} / ${c.goal}` : '—'
 }
 
 function snapshot() {
   return {
     level: currentLevel(),
-    config: state.config ? `${state.config.level} / ${state.config.goal}` : '—',
+    config: cfgLabel(state.config),
     progress: state.progress,
     spins: state.spins,
     frozen: state.isFrozen,
@@ -238,13 +258,13 @@ function pinConfigIfNeeded(reason) {
   const resolved = resolveConfig()
   if (!state.config) {
     state.config = resolved
-    addLog('config', 'pin config', `Закріплено конфіг ${resolved.level} (goal ${resolved.goal}): ${reason}`)
+    addLog('config', 'pin config', `Закріплено ${cfgLabel(resolved)} для рівня ${currentLevel()}: ${reason}`)
     return
   }
-  if (state.spins === 0 && state.config.level !== resolved.level) {
-    const before = state.config.level
+  if (state.spins === 0 && state.config.name !== resolved.name) {
+    const before = cfgLabel(state.config)
     state.config = resolved
-    addLog('config', 're-pin config', `Спінів 0, рівень ${before} → ${resolved.level}: конфіг оновлено на ${resolved.level} (goal ${resolved.goal}): ${reason}`)
+    addLog('config', 're-pin config', `Спінів 0: конфіг ${before} → ${cfgLabel(resolved)} (рівень ${currentLevel()}): ${reason}`)
   }
 }
 
@@ -254,7 +274,7 @@ function normalize() {
   if (earned > 0) {
     state.spins += earned
     state.progress = state.progress % goal
-    addLog('pay', 'convert', `Прогрес ≥ goal: +${earned} спін(ів), залишок ${state.progress}`)
+    addLog('pay', 'convert', `Прогрес ≥ goal ${goal}: +${earned} спін(ів), залишок ${state.progress}`)
   }
   if (state.spins >= LIMIT) {
     const trimmed = state.spins - LIMIT
@@ -264,6 +284,18 @@ function normalize() {
     state.isFrozen = true
     addLog('pay', 'freeze', `Досягнуто ліміт ${LIMIT}: спіни = ${LIMIT}, прогрес обрізано до 0 (згоріло ${lost}), is_frozen = true`)
   }
+}
+
+function logLevelChange(before) {
+  const after = currentLevel()
+  if (after === before) return false
+  const from = LEVELS.findIndex(l => l.level === before)
+  const to = LEVELS.findIndex(l => l.level === after)
+  const passed = to > from + 1 ? ` через ${LEVELS.slice(from + 1, to).map(l => l.level).join(', ')}` : ''
+  const { experience, level_up } = loyalty()
+  const xp = state.levelOverride ? '' : `, досвід у новому рівні ${experience}${level_up ? ' / ' + level_up : ''}`
+  addLog('level', to > from ? 'level up' : 'level down', `Рівень лояльності ${before} → ${after}${passed}${xp}. Закріплений конфіг не чіпається, поки є спіни`)
+  return true
 }
 
 function pay(amount) {
@@ -280,14 +312,11 @@ function pay(amount) {
     addLog('ignored', 'ignored', `is_frozen = true: прогрес не нараховано. plus_one_log ← { type: progress, amount: ${amount}, is_frozen: true }`)
   } else {
     state.progress += amount
-    addLog('pay', 'progress', `Прогрес +${amount} → ${state.progress} / ${state.config.goal} (конфіг ${state.config.level})`)
+    addLog('pay', 'progress', `Прогрес +${amount} → ${state.progress} / ${state.config.goal} (${state.config.name})`)
     normalize()
   }
 
-  if (currentLevel() !== levelBefore) {
-    addLog('level', 'level up', `Рівень лояльності ${levelBefore} → ${currentLevel()} (сума депозитів ${state.totalDeposited})`)
-    pinConfigIfNeeded('після підвищення рівня')
-  }
+  if (logLevelChange(levelBefore)) pinConfigIfNeeded('після зміни рівня')
   render()
 }
 
@@ -295,20 +324,20 @@ function getBonus() {
   if (state.spins === 0) return
   series++
   const resolved = resolveConfig()
-  if (!state.config || state.config.level !== resolved.level) {
-    const before = state.config ? state.config.level : '—'
+  if (!state.config || state.config.name !== resolved.name) {
+    const before = cfgLabel(state.config)
     state.config = resolved
-    addLog('config', 're-pin config', `Спін: конфіг ${before} → ${resolved.level} (goal ${resolved.goal}, рівень юзера ${currentLevel()})`)
+    addLog('config', 're-pin config', `Спін: конфіг ${before} → ${cfgLabel(resolved)} (рівень юзера ${currentLevel()})`)
   }
   state.spins -= 1
-  state.lastBonus = state.config.level
-  state.bonuses.push(state.config.level)
+  state.lastBonus = { level: currentLevel(), config: state.config.name }
+  state.bonuses.push(state.lastBonus)
   let unfreeze = ''
   if (state.spins === 0 && state.isFrozen) {
     state.isFrozen = false
     unfreeze = ' Спіни = 0: is_frozen = false, прогрес знову росте.'
   }
-  addLog('bonus', 'GET BONUS', `Бонус рівня ${state.config.level}. Спіни ${state.spins + 1} → ${state.spins}. plus_one_log ← { mode: bonus, level: ${currentLevel()}, is_frozen: ${state.isFrozen} }.${unfreeze}`)
+  addLog('bonus', 'GET BONUS', `Бонус ${state.config.name} (рівень юзера ${currentLevel()}). Спіни ${state.spins + 1} → ${state.spins}. plus_one_log ← { mode: bonus, level: ${currentLevel()}, is_frozen: ${state.isFrozen} }.${unfreeze}`)
   pinConfigIfNeeded('після отримання бонусу')
   render()
 }
@@ -317,11 +346,14 @@ function reset() {
   state = initialState()
   log = []
   series++
-  addLog('reset', 'RESET', 'Усе скинуто до початкового стану: new, прогрес 0, спінів 0, без бонусів')
+  addLog('reset', 'RESET', 'Усе скинуто до початкового стану: new, прогрес 0, спінів 0, без бонусів, доступ до конфігів за замовчуванням')
   render()
 }
 
 function fmt(n) { return n.toLocaleString('uk-UA') }
+
+function levelTag(l) { return `<span class="tag ${l}">${l}</span>` }
+function cfgTag(c) { return c ? `<span class="tag cfg">${c.name}</span> goal ${fmt(c.goal)}` : '— (ще не закріплено)' }
 
 function render() {
   const cfg = state.config || resolveConfig()
@@ -329,14 +361,13 @@ function render() {
   const hasSpins = state.spins > 0
   const done = hasSpins ? goal : Math.min(state.progress, goal)
   const pct = Math.floor(done * 100 / goal)
+  const lv = loyalty()
 
   document.getElementById('total-dep').textContent = fmt(state.totalDeposited)
-  document.getElementById('auto-level').textContent = autoLevel()
-  const levelFrom = LEVEL_THRESHOLDS.find(t => t.level === autoLevel()).from
-  const nextLevel = LEVEL_ORDER[LEVEL_ORDER.indexOf(autoLevel()) + 1]
-  document.getElementById('level-xp').textContent = nextLevel
-    ? `${fmt(state.totalDeposited - levelFrom)} / ${fmt(CONFIGS[autoLevel()].goal)} до ${nextLevel}`
-    : `${fmt(state.totalDeposited - levelFrom)} (максимальний рівень)`
+  document.getElementById('auto-level').innerHTML = levelTag(lv.level)
+  document.getElementById('level-xp').textContent = lv.level_up
+    ? `${fmt(lv.experience)} / ${fmt(lv.level_up)} до ${LEVELS[lv.index + 1].level}`
+    : `${fmt(lv.experience)} (максимальний рівень)`
   document.getElementById('level-override').value = state.levelOverride
   document.getElementById('pay-hint').textContent = state.isFrozen ? 'is_frozen: депозит запишеться в user_payments, прогрес не зміниться' : ''
 
@@ -356,24 +387,22 @@ function render() {
   document.getElementById('get-bonus').disabled = !hasSpins
   const prizeEl = document.getElementById('prize')
   prizeEl.hidden = !state.lastBonus
-  if (state.lastBonus) prizeEl.textContent = `Бонус рівня ${state.lastBonus}`
+  if (state.lastBonus) prizeEl.textContent = `Бонус ${state.lastBonus.config}`
 
-  const levelTag = l => `<span class="tag ${l}">${l}</span>`
+  const byConfig = state.bonuses.reduce((m, b) => ({ ...m, [b.config]: (m[b.config] || 0) + 1 }), {})
   document.getElementById('state').innerHTML = `
-    <b>Рівень юзера</b><span>${levelTag(currentLevel())}</span>
-    <b>Закріплений конфіг</b><span>${state.config ? `${levelTag(state.config.level)} goal ${fmt(state.config.goal)}` : '— (ще не закріплено)'}</span>
-    <b>Актуальний конфіг за рівнем</b><span>${levelTag(resolveConfig().level)} goal ${fmt(resolveConfig().goal)}</span>
+    <b>Рівень юзера</b><span>${levelTag(currentLevel())}${state.levelOverride ? ' (вручну)' : ''}</span>
+    <b>Закріплений конфіг</b><span>${cfgTag(state.config)}</span>
+    <b>Актуальний конфіг за рівнем</b><span>${cfgTag(resolveConfig())}</span>
     <b>details.progress</b><span>${fmt(state.progress)}</span>
     <b>details.spins</b><span>${state.spins} / ${LIMIT}</span>
     <b>details.is_frozen</b><span>${state.isFrozen}</span>
     <b>/info.bonus</b><span>{ goal: ${goal}, done: ${done}, progress: ${pct}, can_spin: ${hasSpins}, available_spins: ${state.spins}, is_frozen: ${state.isFrozen} }</span>
-    <b>Бонусів отримано</b><span>${state.bonuses.length}${state.bonuses.length ? ' (' + Object.entries(state.bonuses.reduce((m, l) => ({ ...m, [l]: (m[l] || 0) + 1 }), {})).map(([l, n]) => `${l} ×${n}`).join(', ') + ')' : ''}</span>
+    <b>Бонусів отримано</b><span>${state.bonuses.length}${state.bonuses.length ? ' (' + Object.entries(byConfig).map(([c, n]) => `${c} ×${n}`).join(', ') + ')' : ''}</span>
     <b>user_payments (plus_one_xp)</b><span>${state.userPayments.length} записів, сума ${fmt(state.userPayments.reduce((s, p) => s + p.amount, 0))}</span>
   `
 
-  document.getElementById('configs').innerHTML = Object.values(CONFIGS).map(c =>
-    `${levelTag(c.level)} goal ${fmt(c.goal)}`
-  ).join('<br>') + `<br>ліміт спінів: ${LIMIT}`
+  document.getElementById('configs').innerHTML = Object.values(CONFIGS).map(c => cfgTag(c)).join(' &nbsp;·&nbsp; ') + ` &nbsp;·&nbsp; ліміт спінів: ${LIMIT}`
 
   const tbody = document.getElementById('log')
   const rows = log.map((e, i) => ({ ...e, index: i + 1 }))
@@ -400,12 +429,13 @@ function render() {
   document.getElementById('log-count').textContent = `${log.length} записів · новіші зверху`
 }
 
-document.getElementById('presets').innerHTML = PRESETS.map(p => `<button data-amount="${p}">${fmt(p)}</button>`).join('')
 function clearBonus() {
   if (!state.lastBonus) return
   state.lastBonus = null
   render()
 }
+
+document.getElementById('presets').innerHTML = PRESETS.map(p => `<button data-amount="${p}">${fmt(p)}</button>`).join('')
 document.getElementById('presets').addEventListener('click', e => {
   const b = e.target.closest('button[data-amount]')
   if (b) document.getElementById('amount').value = b.dataset.amount
@@ -415,13 +445,16 @@ document.getElementById('amount').addEventListener('input', clearBonus)
 document.getElementById('pay').addEventListener('click', () => pay(parseInt(document.getElementById('amount').value, 10)))
 document.getElementById('get-bonus').addEventListener('click', getBonus)
 document.getElementById('reset').addEventListener('click', reset)
+
+document.getElementById('level-override').innerHTML =
+  '<option value="">авто за сумою депозитів</option>' +
+  LEVELS.map(l => `<option value="${l.level}">${l.level}</option>`).join('')
 document.getElementById('level-override').addEventListener('change', e => {
   series++
   state.lastBonus = null
   const before = currentLevel()
   state.levelOverride = e.target.value
-  if (currentLevel() !== before) addLog('level', 'level change', `Рівень змінено вручну ${before} → ${currentLevel()}`)
-  pinConfigIfNeeded('зміна рівня')
+  if (logLevelChange(before)) pinConfigIfNeeded('після ручної зміни рівня')
   render()
 })
 
