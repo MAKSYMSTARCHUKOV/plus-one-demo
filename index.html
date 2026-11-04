@@ -112,7 +112,7 @@
       <div class="kv">
         <b>Сума депозитів</b><span id="total-dep"></span>
         <b>Авто-рівень</b><span id="auto-level"></span>
-        <b>Пороги</b><span id="thresholds" class="small"></span>
+        <b>Досвід у рівні</b><span id="level-xp"></span>
       </div>
       <label for="level-override" style="margin-top:10px">Ручний рівень (для тестів)</label>
       <select id="level-override">
@@ -181,11 +181,11 @@ const CONFIGS = {
   pro:    { level: 'pro',    goal: 10000 },
 }
 
-const LEVEL_THRESHOLDS = [
-  { level: 'new', from: 0 },
-  { level: 'player', from: 10000 },
-  { level: 'pro', from: 30000 },
-]
+const LEVEL_ORDER = ['new', 'player', 'pro']
+const LEVEL_THRESHOLDS = LEVEL_ORDER.map((level, i) => ({
+  level,
+  from: LEVEL_ORDER.slice(0, i).reduce((sum, l) => sum + CONFIGS[l].goal, 0),
+}))
 
 const PRESETS = [500, 1000, 2000, 5000, 10000, 25000, 100000]
 
@@ -270,25 +270,24 @@ function pay(amount) {
   if (!(amount > 0)) return
   series++
   const levelBefore = currentLevel()
-  state.totalDeposited += amount
   state.lastBonus = null
+  if (!state.isFrozen) pinConfigIfNeeded('нарахування бачить рівень юзера до депозиту')
+  state.totalDeposited += amount
   state.userPayments.push({ type: 'plus_one_xp', amount })
   addLog('pay', 'PAY', `Депозит ${amount}. user_payments ← plus_one_xp ${amount} (пишеться завжди)`)
 
-  if (currentLevel() !== levelBefore) {
-    addLog('level', 'level up', `Рівень лояльності ${levelBefore} → ${currentLevel()} (сума депозитів ${state.totalDeposited})`)
-  }
-
   if (state.isFrozen) {
     addLog('ignored', 'ignored', `is_frozen = true: прогрес не нараховано. plus_one_log ← { type: progress, amount: ${amount}, is_frozen: true }`)
-    render()
-    return
+  } else {
+    state.progress += amount
+    addLog('pay', 'progress', `Прогрес +${amount} → ${state.progress} / ${state.config.goal} (конфіг ${state.config.level})`)
+    normalize()
   }
 
-  pinConfigIfNeeded('перше нарахування або спінів 0')
-  state.progress += amount
-  addLog('pay', 'progress', `Прогрес +${amount} → ${state.progress} / ${state.config.goal}`)
-  normalize()
+  if (currentLevel() !== levelBefore) {
+    addLog('level', 'level up', `Рівень лояльності ${levelBefore} → ${currentLevel()} (сума депозитів ${state.totalDeposited})`)
+    pinConfigIfNeeded('після підвищення рівня')
+  }
   render()
 }
 
@@ -333,7 +332,11 @@ function render() {
 
   document.getElementById('total-dep').textContent = fmt(state.totalDeposited)
   document.getElementById('auto-level').textContent = autoLevel()
-  document.getElementById('thresholds').textContent = LEVEL_THRESHOLDS.map(t => `${t.level} ≥ ${fmt(t.from)}`).join(' · ')
+  const levelFrom = LEVEL_THRESHOLDS.find(t => t.level === autoLevel()).from
+  const nextLevel = LEVEL_ORDER[LEVEL_ORDER.indexOf(autoLevel()) + 1]
+  document.getElementById('level-xp').textContent = nextLevel
+    ? `${fmt(state.totalDeposited - levelFrom)} / ${fmt(CONFIGS[autoLevel()].goal)} до ${nextLevel}`
+    : `${fmt(state.totalDeposited - levelFrom)} (максимальний рівень)`
   document.getElementById('level-override').value = state.levelOverride
   document.getElementById('pay-hint').textContent = state.isFrozen ? 'is_frozen: депозит запишеться в user_payments, прогрес не зміниться' : ''
 
